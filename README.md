@@ -26,6 +26,8 @@ python -m pip install -r requirements.txt
 
 Para reproducir las versiones del entorno verificado, usar `requirements-lock.txt` en lugar de `requirements.txt`. El lock corresponde a Windows/Python 3.12; en otra plataforma puede requerir resolver dependencias con `requirements.txt` y volver a verificar.
 
+Marketing usa `openai/gpt-oss-20b` en Groq y respuestas JSON nativas para los datos que pasan entre agentes. El modelo se puede cambiar con `HORNERO_MODELO` en `.env` y reiniciando la aplicación; el modo actual requiere soporte de JSON Schema nativo. La configuración es igual en Windows y macOS. Los ejemplos originales conservan su modelo de referencia.
+
 Solo si todavía no existe `.env`, copiar la plantilla y completar la clave localmente:
 
 ```powershell

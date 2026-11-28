@@ -1,22 +1,23 @@
 # Hoja de ruta del TP Hornero
 
-Fuente única del estado actual. Última revisión: 27/11/2026. Los responsables quedan sin asignar hasta acuerdo del equipo. `Implementado` no significa validado editorialmente.
+Fuente única del estado actual. Última revisión: 27/11/2026. Mati D asume las tareas de Marketing y los avances generales realizados hasta ahora; las tareas futuras quedan sin asignar. `Implementado` no significa validado editorialmente.
 
 | ID | Tarea / criterio de cierre | Estado | Responsable | Evidencia o dependencia |
 | --- | --- | --- | --- | --- |
-| G-01 | Ignorar secretos, entornos y cachés | Hecho | Sin asignar | `.gitignore`; `.env` no estaba versionado |
-| G-02 | Documentar instalación, arquitectura y trabajo con IA | Hecho | Sin asignar | README, AGENTS, arquitectura y bitácoras |
-| G-03 | Instalar y verificar entorno Windows | Hecho | Sin asignar | Python 3.12.10, 121 paquetes fijados, `pip check` sin conflictos; ver bitácora |
+| G-01 | Ignorar secretos, entornos y cachés | Hecho | Mati D | `.gitignore`; `.env` no estaba versionado |
+| G-02 | Documentar instalación, arquitectura y trabajo con IA | Hecho | Mati D | README, AGENTS, arquitectura y bitácoras |
+| G-03 | Instalar y verificar entorno Windows | Hecho | Mati D | Python 3.12.10, 121 paquetes fijados, `pip check` sin conflictos; ver bitácora |
 | G-04 | Acordar responsables, ramas, PR y protección de main | Pendiente | Sin asignar | Flujo propuesto en README; configuración remota no verificada |
-| G-05 | Separar y renombrar ejemplos para evitar ejecutar el agente básico por error | Hecho | Sin asignar | `ejemplos/`; títulos distintos; seis tests y script funcional OK; ver bitácora |
-| E1-01 | Tres roles con StateGraph y una ronda de corrección | Implementado | Sin asignar | `etapa1/agentes.py`; falta evaluación editorial final |
-| E1-02 | RAG persistente y herramientas de historial | Implementado | Sin asignar | `etapa1/rag_guia.py`, `tools.py` |
-| E1-03 | Pruebas técnicas reproducibles, UI y Groq | Hecho | Sin asignar | Seis tests OK; RAG real, AppTest en ambas entradas, Groq real y HTTP 200; ver bitácora |
-| E1-04 | Evaluar cuatro consultas oficiales contra guía y pedido | En curso | Sin asignar | Primera salida de Instagram revisada contra PDF; controles y política de fuentes ajustados; falta revalidar las cuatro consultas con esta versión |
-| E1-05 | Guardar y revisar piezas de entrega | Pendiente | Sin asignar | CSV conserva las ocho filas originales |
-| E1-06 | Validar largos, hashtags y máximos de emojis con Python | Hecho | Sin asignar | `etapa1/validaciones.py`; límites y Unicode verificados; 16 tests totales OK |
-| E1-07 | Consolidar todos los ajustes del revisor antes de corregir | Hecho | Sin asignar | Categorías y reemplazos literales; prueba real del borrador reúne tilde y hashtags; flujo completo OK; no garantiza exhaustividad editorial |
-| E1-08 | Unificar las fuentes con prioridad de la guía de marca | Hecho | Sin asignar | Decisión del usuario: prima la guía; política compartida por los tres roles; acceso anticipado aceptado y descuento inventado rechazado en pruebas reales |
+| G-05 | Separar y renombrar ejemplos para evitar ejecutar el agente básico por error | Hecho | Mati D | `ejemplos/`; títulos distintos; seis tests y script funcional OK; ver bitácora |
+| E1-01 | Tres roles con StateGraph y una ronda de corrección | Implementado | Mati D | `etapa1/agentes.py`; falta evaluación editorial final |
+| E1-02 | RAG persistente y herramientas de historial | Implementado | Mati D | `etapa1/rag_guia.py`, `tools.py` |
+| E1-03 | Pruebas técnicas reproducibles, UI y Groq | Hecho | Mati D | Seis tests OK; RAG real, AppTest en ambas entradas, Groq real y HTTP 200; ver bitácora |
+| E1-04 | Evaluar cuatro consultas oficiales contra guía y pedido | En curso | Mati D | Última tanda interrumpida por límite diario de Groq; falta verificar la versión actual y evaluar las cuatro piezas contra guía y pedido |
+| E1-05 | Guardar y revisar piezas de entrega | Pendiente | Mati D | CSV conserva las ocho filas originales |
+| E1-06 | Validar largos, hashtags y máximos de emojis con Python | Hecho | Mati D | `etapa1/validaciones.py`; límites y Unicode verificados; 16 tests totales OK |
+| E1-07 | Consolidar los ajustes del revisor antes de corregir | Hecho | Mati D | Revisión simple y conjunta contra guía/pedido; controles de formato en Python; las categorías obligatorias se retiraron en E1-09 |
+| E1-08 | Unificar las fuentes con prioridad de la guía de marca | Hecho | Mati D | Decisión del usuario: prima la guía; política compartida por los tres roles; acceso anticipado aceptado y descuento inventado rechazado en pruebas reales |
+| E1-09 | Retirar restricciones adicionales y mostrar siempre el borrador | Hecho | Mati D | Sin corte previo ni seis categorías; brief sin lista de faltantes; borradores completos y enlace único de WhatsApp; pruebas en bitácora. E1-04 continúa abierta |
 | E2-01 | Acordar orquestador, contratos y reutilización de Marketing | Propuesto | Sin asignar | `docs/ARQUITECTURA.md`; resolver imports sin duplicar código |
 | E2-02 | RAG de políticas RRHH | Pendiente | Sin asignar | Manual provisto |
 | E2-03 | Entrenar/validar attrition y tools de predicción, interpretación y simulación | Pendiente | Sin asignar | `empleados.csv`; definir partición y métrica |
@@ -38,3 +39,7 @@ Fuente única del estado actual. Última revisión: 27/11/2026. Los responsables
 4. Ejecutar consultas oficiales, consolidar CSV, informe y paquete final.
 
 Al cambiar un estado, enlazar evidencia en la bitácora de la etapa. Evitar duplicar esta tabla en otros documentos.
+
+## Rama actual
+
+`feat/e1-04-evaluacion-marketing`: completar E1-04 con las cuatro consultas, ajustar prompts y registrar evidencia; luego completar E1-05 con las piezas aprobadas. Al cerrar y fusionar esta rama, abrir otra para la siguiente tarea acordada.

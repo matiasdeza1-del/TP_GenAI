@@ -59,7 +59,8 @@ def verificar(live=False):
             reglas = tools.consultar_guia_marca.invoke({
                 "situacion": "WhatsApp para Nuevos con descuento en Cocina",
                 "canal": "WhatsApp", "segmento": "Nuevos", "promocion": "descuento"})
-            assert len(reglas["obligatorias"]) == 3, "Faltan reglas estructurales"
+            for referencia in ("Canal: WhatsApp", "— Nuevos:", "— Descuentos:"):
+                assert any(referencia in regla for regla in reglas["obligatorias"]), "Falta regla: " + referencia
             modelo, indice, chunks = tools._cargar_guia()
             indice2, chunks2 = abrir_indice(modelo)
             assert chunks == chunks2 and indice.ntotal == indice2.ntotal == len(chunks)

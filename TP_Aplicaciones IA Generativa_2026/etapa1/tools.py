@@ -3,12 +3,13 @@ from pathlib import Path
 from functools import lru_cache
 from typing import Literal
 
-from rag_guia import MODELO, SentenceTransformer, abrir_indice
 from langchain_core.tools import tool
 
 
 @lru_cache(maxsize=1)
 def _cargar_guia():
+    from rag_guia import MODELO, SentenceTransformer, abrir_indice
+
     modelo = SentenceTransformer(MODELO, device="cpu")
     indice, chunks = abrir_indice(modelo)
     return modelo, indice, chunks
@@ -28,7 +29,8 @@ def consultar_guia_marca(
     """
     modelo, indice, chunks = _cargar_guia()
     etiquetas = {"descuento": "Descuentos", "cuotas": "Cuotas", "envío sin cargo": "Envío sin cargo"}
-    prefijos = []
+    prefijos = ["Voz y tono — La voz", "Voz y tono — El tono", "Palabras y frases prohibidas —",
+                "Reglas por canal — Reglas generales:", "Plazos de entrega: regla de oro —"]
     if canal:
         prefijos.append(f"Reglas por canal — Canal: {canal} ")
     if segmento:
@@ -36,17 +38,38 @@ def consultar_guia_marca(
     if promocion in etiquetas:
         prefijos.append(f"Promociones y legales obligatorios — {etiquetas[promocion]}:")
     obligatorias = [c for c in chunks if c.startswith(tuple(prefijos))]
+    if canal == "Push":
+        # La tabla describe la acción; la regla general exige redactarla en voseo.
+        obligatorias = [c.replace("Llamado a la acción: Abre la app",
+                                 "Llamado a la acción: abrir la app (en voseo: Abrí la app)")
+                        for c in obligatorias]
+    if canal == "WhatsApp":
+        # La misma sección distingue el texto legal de los posts del link usado en WhatsApp.
+        obligatorias = [
+            c.split(":", 1)[0] + ': En WhatsApp, los legales van como link a "Bases y condiciones".'
+            if c.startswith("Promociones y legales obligatorios —") else c
+            for c in obligatorias
+        ]
     vector = modelo.encode([situacion], normalize_embeddings=True)
     _, vecinos = indice.search(vector, len(chunks))
     contexto = []
     for posicion in vecinos[0]:
         fragmento = chunks[posicion]
-        if fragmento in obligatorias or fragmento.startswith("Promociones y legales obligatorios —"):
+        if fragmento in obligatorias:
+            continue
+        # Reglas de otro canal/segmento/promoción y ejemplos no son contexto del pedido.
+        # Las reglas aplicables ya se seleccionaron arriba por sus encabezados.
+        if fragmento.startswith(("Reglas por canal —", "Segmentos de clientes y cómo hablarles —",
+                                "Promociones y legales obligatorios —", "Ejemplos —")):
             continue
         contexto.append(fragmento)
-        if len(obligatorias) + len(contexto) >= 5:
+        if len(contexto) >= 3:
             break
-    return {"obligatorias": obligatorias, "contexto": contexto}
+    legales = [c for c in chunks if c.startswith("Promociones y legales obligatorios —")]
+    if canal == "WhatsApp":
+        legales = [c.split(":", 1)[0] + ': En WhatsApp, los legales van como link a "Bases y condiciones".'
+                   for c in legales]
+    return {"obligatorias": obligatorias, "contexto": contexto, "legales_revision": legales}
 
 
 HISTORIAL = Path(__file__).resolve().parent.parent / "datos/etapa1/contenidos_aprobados.csv"

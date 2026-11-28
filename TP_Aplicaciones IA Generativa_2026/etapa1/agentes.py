@@ -1,61 +1,93 @@
 """Agente estratega de Marketing de Hornero."""
 
 import json
+import os
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Literal, TypedDict
 
 from dotenv import load_dotenv
 from groq import APIError, RateLimitError
 from langchain.agents import create_agent
-from langchain.agents.structured_output import ToolStrategy
+from langchain.agents.structured_output import ProviderStrategy
 from langchain_groq import ChatGroq
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 from tools import consultar_guia_marca, consultar_historial, guardar_pieza
 from validaciones import reglas_formato, validar_formato
 
 
+PATRON_ENLACE = re.compile(
+    r"https?://[^\s<>\[\]()]+|(?<![\w@])(?:[\w-]+\.)+[a-z]{2,}(?:/[^\s<>\[\]()]*)?", re.IGNORECASE)
+
+
 POLITICA_FUENTES = (
-    "La guía de marca es la fuente de verdad para las reglas y los beneficios explícitos "
-    "de cada segmento. Los prompts y el pedido no deben contradecirla. "
-    "La guía establece acceso anticipado a lanzamientos para Premium: podés mencionarlo "
-    "en una pieza para ese segmento sin pedir que el usuario lo confirme otra vez. "
-    "Un beneficio autorizado no obliga a incluirlo: respetá el foco del pedido. "
-    "El pedido aporta los hechos particulares de la campaña, como qué colección se anuncia. "
-    "No inventes porcentajes, precios, fechas, horas de anticipación, códigos ni condiciones. "
-    "La sección de legales explica cómo comunicar una promoción; no autoriza a ofrecerla. "
-    "Los ejemplos de la guía y el historial son referencias, no autorizaciones para "
-    "copiar promociones o características de productos a una campaña nueva. "
+    "Cumplí la guía de marca y el pedido. No agregues requisitos ajenos a la guía. "
+    "Los beneficios explícitos de Premium están autorizados por la guía; no hace falta "
+    "reconfirmarlos ni incluirlos todos. Acceso anticipado no significa venta exclusiva. "
+    "El interés de Recurrentes por precio y cuotas no confirma una promoción ni una línea nueva. "
+    "datos_del_pedido resume lo solicitado: si promocion es ninguna, no agregues una "
+    "oferta de cuotas, descuento o envío sin cargo. Los beneficios de segmento de la guía "
+    "son distintos de esas promociones. "
+    "La consigna exige no inventar datos: importes, códigos, fechas, enlaces, contactos "
+    "y condiciones salen del pedido o de una fuente explícita. Los ejemplos y el historial "
+    "no habilitan copiar ofertas a otra campaña. Podés crear ideas, títulos y enfoques. "
+    "Podés usar imágenes de estilo y disfrute, pero las propiedades físicas y prestaciones "
+    "son hechos: no inventes materiales, resistencia al clima, garantías ni reservas de stock. "
+    "Limitate al mensaje pedido: no agregues una promoción ni una fecha por iniciativa propia. "
+    "Un dato opcional se omite, no se pide. Para un anuncio genérico alcanza con la colección "
+    "que menciona el pedido: no se necesita nombre oficial ni fecha. Títulos, ideas y hashtags "
+    "los creás vos, nunca los dejes como datos pendientes. "
+    "Solo si falta un dato indispensable, entregá el texto completo con [PENDIENTE: dato a completar] "
+    "en su lugar. No frenes la redacción ni inventes una oferta para llenar el hueco. "
+    "El contexto recuperado puede incluir reglas para otras situaciones: aplicá cada "
+    "regla solo cuando corresponda al pedido y no agregues hechos o promociones "
+    "a partir de ejemplos. Si la guía exige un beneficio no definido, dejalo pendiente. "
+    "Responder al email ya es un canal directo de contacto; no exige inventar una "
+    "dirección ni pedir un teléfono adicional. "
+    "En WhatsApp, la sección 6 pone los legales en el link de Bases y condiciones; "
+    "no obliga a pegar la leyenda larga del descuento en el mensaje. Ese puede ser "
+    "su único link: no hace falta sumar un enlace al producto. "
 )
 
 
-class BriefEstrategico(BaseModel):
+class _Salida(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class BriefEstrategico(_Salida):
     objetivo: str
     enfoque: str
     antecedentes_a_evitar: list[str]
-    datos_faltantes: list[str] = Field(description="Datos necesarios que el pedido no proporciona.")
+
+
+def _llm(*, esfuerzo="low"):
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")
+    return ChatGroq(model=os.getenv("HORNERO_MODELO", "openai/gpt-oss-20b"),
+                    temperature=0, reasoning_effort=esfuerzo, max_tokens=1024,
+                    timeout=45, max_retries=2)
 
 
 def crear_estratega():
-    load_dotenv()
     return create_agent(
-        model=ChatGroq(model="openai/gpt-oss-20b", temperature=0, reasoning_effort="low", timeout=25, max_retries=1),
+        model=_llm(esfuerzo="low"),
         tools=[],
-        response_format=ToolStrategy(BriefEstrategico),
+        response_format=ProviderStrategy(BriefEstrategico, strict=True),
         system_prompt=POLITICA_FUENTES + (
             "Sos el estratega de Marketing de Hornero. Prepará un brief breve en español "
             "rioplatense para que otro agente redacte la pieza. El código te proporciona "
             "la guía y el historial como evidencia. Usá el canal y segmento del pedido "
-            "cuando estén indicados. Identificá qué enfoque anterior evitar y proponé un "
-            "ángulo concreto que no lo repita. Separá hechos de campaña, reglas y beneficios "
-            "de la guía, y antecedentes del historial. "
-            "Las ofertas pasadas no están autorizadas para una pieza nueva. "
-            "En objetivo y enfoque evitá inventar precios, beneficios, plazos o prestaciones. "
-            "Cuando el pedido solo menciona una categoría, proponé una acción útil "
-            "que el cliente pueda realizar sin depender de prestaciones o ventajas no confirmadas. "
-            "Si un dato indispensable para cumplir el pedido falta, registralo en datos_faltantes."
+            "cuando estén indicados. Proponé una idea concreta adecuada al pedido. "
+            "El historial sirve para variar el enfoque, no para prohibir frases de la guía. "
+            "Si no hay historial, antecedentes_a_evitar debe ser []. Un ejemplo de la guía "
+            "no es una campaña anterior. Diferenciá recomendaciones, como el largo ideal, "
+            "de requisitos, como el máximo del canal. El brief solo define el mensaje "
+            "y su enfoque; no agregues una lista de datos a pedir al usuario. "
+            "En el enfoque incluí los pasos obligatorios de la guía que correspondan "
+            "al pedido y los hechos confirmados en el pedido o la guía. Nunca infieras "
+            "promociones a partir del historial."
         ),
     )
 
@@ -66,23 +98,29 @@ def preparar_brief(pedido: str, *, canal=None, segmento=None, promocion="ninguna
         "situacion": pedido, "canal": canal, "segmento": segmento, "promocion": promocion,
     })
     historial = consultar_historial.invoke({"canal": canal, "segmento": segmento})
-    entrada = {"pedido": pedido, "guia": guia, "historial": historial}
+    guia_generacion = {k: guia[k] for k in ("obligatorias", "contexto")}
+    entrada = {"pedido": pedido, "guia": guia_generacion, "historial": historial,
+               "datos_del_pedido": {"canal": canal, "segmento": segmento, "promocion": promocion}}
     resultado = crear_estratega().invoke(
         {"messages": [{"role": "user", "content": json.dumps(entrada, ensure_ascii=False)}]},
         {"recursion_limit": 12},
     )
+    estrategia = resultado["structured_response"].model_dump()
+    if not historial:
+        estrategia["antecedentes_a_evitar"] = []
     return {
         "pedido": pedido,
         "canal": canal,
         "segmento": segmento,
         "promocion": promocion,
-        "reglas_aplicables": guia,
+        "reglas_aplicables": guia_generacion,
+        "legales_revision": guia.get("legales_revision", []),
         "historial": historial,
-        "estrategia": resultado["structured_response"].model_dump(),
+        "estrategia": estrategia,
     }
 
 
-class Pedido(BaseModel):
+class Pedido(_Salida):
     canal: Literal["Instagram", "Email", "WhatsApp", "Push", "LinkedIn"] | None
     segmento: Literal["Nuevos", "Recurrentes", "Premium", "Todos"] | None
     promocion: Literal["descuento", "cuotas", "envío sin cargo", "ninguna"]
@@ -90,28 +128,19 @@ class Pedido(BaseModel):
     es_marketing: bool
 
 
-class Pieza(BaseModel):
+class Pieza(_Salida):
     titulo: str
     texto: str
 
 
-class Revision(BaseModel):
+class MensajeWhatsApp(_Salida):
+    """Cuerpo creativo; la aplicación incorpora el enlace y los legales del canal."""
+    cuerpo: str
+
+
+class Revision(_Salida):
     veredicto: Literal["aprobar", "corregir", "pedir_datos"]
     observacion: str
-
-
-class AjusteTexto(BaseModel):
-    fragmento: str = Field(min_length=1, description="Cita literal del texto actual que debe cambiar.")
-    reemplazo: str = Field(description="Texto corregido para ese fragmento, sin explicaciones.")
-
-
-class RevisionEditorial(BaseModel):
-    ortografia: list[AjusteTexto] = Field(description="Todos los ajustes de ortografía, tildes y gramática; [] si no hay.")
-    tono: list[AjusteTexto] = Field(description="Todos los ajustes de voseo y tono; [] si no hay.")
-    respaldo: list[str] = Field(description="Todas las afirmaciones sin respaldo que se pueden quitar o corregir; [] si no hay.")
-    repeticion: list[str] = Field(description="Repeticiones de antecedentes reales; [] si no hay antecedentes o no se repiten.")
-    contenido: list[str] = Field(description="Otros incumplimientos editoriales: mensaje, CTA o reglas de marca; [] si no hay.")
-    datos_faltantes: list[str] = Field(description="Preguntas por todos los datos indispensables ausentes; [] si no faltan.")
 
 
 class Estado(TypedDict, total=False):
@@ -127,10 +156,9 @@ class Estado(TypedDict, total=False):
 
 @lru_cache(maxsize=None)
 def _agente(esquema, instrucciones):
-    load_dotenv()
     return create_agent(
-        ChatGroq(model="openai/gpt-oss-20b", temperature=0, reasoning_effort="low", timeout=25, max_retries=1),
-        tools=[], response_format=ToolStrategy(esquema), system_prompt=instrucciones,
+        _llm(esfuerzo="low"),
+        tools=[], response_format=ProviderStrategy(esquema, strict=True), system_prompt=instrucciones,
     )
 
 
@@ -150,7 +178,11 @@ def _estratega(estado):
     pedido = _consultar(
         Pedido,
         "Identificá los datos explícitos de un pedido de contenido de Marketing para Hornero. "
-        "Usá null para canal o segmento omitidos. Si se pide recuperar clientes por una entrega, "
+        "Si el pedido dice email, correo o mail, el canal es Email. Si dice Instagram, WhatsApp, "
+        "push o LinkedIn, usá ese canal. Usá null solo si el canal o segmento están omitidos. "
+        "No deduzcas el segmento por el objetivo: clientes con problemas de entrega no implica "
+        "Recurrentes. Si no se menciona Nuevos, Recurrentes, Premium o Todos, segmento es null. "
+        "Si se pide recuperar clientes por una entrega, "
         "eso es Marketing. Marcá guardar solo si el usuario lo solicita expresamente. "
         "Sin descuento significa ninguna si no hay otro beneficio.",
         pregunta,
@@ -159,30 +191,6 @@ def _estratega(estado):
         mensaje = ("¿Para qué canal querés la pieza?" if pedido.es_marketing
                    else "Puedo ayudarte a generar piezas de marketing para Hornero.")
         return {"pedido": pedido, "respuesta": mensaje}
-    if pedido.promocion == "descuento":
-        if pedido.canal == "WhatsApp":
-            patron = r"(?:https?://|\bwww\.)[^\s<>]+|\b[\w.-]+\.com\.ar/[^\s<>]+"
-            pregunta_faltante = (
-                "¿Cuál es el enlace oficial a las bases y condiciones del descuento? "
-                "Para continuar, reenviá el pedido original con ese enlace."
-            )
-        else:
-            patron = r"\d{1,2}/\d{1,2}.*\d{1,2}/\d{1,2}"
-            pregunta_faltante = "¿Entre qué fechas aplica el descuento? Reenviá el pedido con la vigencia."
-        if not re.search(patron, pregunta):
-            respuesta = pregunta_faltante
-            if pedido.canal == "WhatsApp":
-                porcentaje = re.search(r"(?<![\d.,+-])(\d{1,3}(?:[.,]\d+)?)\s*%\s+de\s+descuento\b", pregunta, re.IGNORECASE)
-                categoria = re.search(r"\bdescuento en (Cocina|Electro|Muebles|Jardín)\b", pregunta, re.IGNORECASE)
-                if porcentaje:
-                    rubro = f" en {categoria[1].capitalize()}" if categoria else ""
-                    borrador = f"Tenés un {porcentaje[1]} % de descuento{rubro}. "
-                else:
-                    borrador = "Tenés un descuento. "
-                borrador += "Consultá las bases y condiciones: [enlace oficial]"
-                respuesta = f"**Borrador pendiente de aprobación**\n\n{borrador}\n\n{pregunta_faltante}"
-            return {"pedido": pedido, "respuesta": respuesta,
-                    "detalle": _detalle(estado, "Estratega · faltan datos", pregunta_faltante)}
     brief = preparar_brief(pregunta, canal=pedido.canal, segmento=pedido.segmento,
                            promocion=pedido.promocion)
     return {"pedido": pedido, "brief": brief, "correcciones": 0,
@@ -193,95 +201,98 @@ def _estratega(estado):
 def _redactor(estado):
     brief = estado["brief"]
     entrada = {k: brief[k] for k in ("pedido", "reglas_aplicables", "estrategia")}
+    entrada["datos_del_pedido"] = estado["pedido"].model_dump(include={"canal", "segmento", "promocion"})
     entrada["controles_formato"] = reglas_formato(estado["pedido"].canal)
     if estado["correcciones"]:
         entrada.update(borrador=estado["pieza"].model_dump(),
                        observacion=estado["revision"].observacion)
-    formato = " Usá imperativos rioplatenses como elegí, abrí y mirá."
-    if estado["pedido"].canal == "Push":
-        formato += (" Para push, escribí un título de hasta 40 caracteres y una sola frase "
-                   "de hasta 90 caracteres, incluidos espacios. El push abre la app por "
-                   "su funcionamiento. No agregues la etiqueta «Abre la app».")
+    instrucciones_canal = ""
+    if estado["pedido"].canal == "WhatsApp":
+        instrucciones_canal = (
+            " Para WhatsApp entregá únicamente cuerpo con el mensaje principal. "
+            "El código añade el único link y los legales como enlace a bases. No incluyas "
+            "links, marcadores de enlaces, botones ni la leyenda legal dentro del cuerpo."
+        )
     pieza = _consultar(
-        Pieza,
+        MensajeWhatsApp if estado["pedido"].canal == "WhatsApp" else Pieza,
         POLITICA_FUENTES +
-        "Redactá una pieza de Hornero en voseo usando el pedido y la guía según la política de fuentes. "
-        "La estrategia es orientativa: omití toda oferta, prestación o promesa sugerida "
-        "que no esté respaldada por el pedido o por una regla explícita de la guía. "
-        "No inventes frecuencias de mantenimiento, fechas, enlaces ni códigos. "
-        "Cumplí controles_formato. Los emojis son opcionales: no tienen mínimo. "
-        "En una corrección resolvé todas las observaciones juntas, conservando lo que ya cumple. "
-        "Entregá el título y el texto sin etiquetas ni comentarios editoriales." + formato,
+        "Sos el redactor de Hornero. Escribí una pieza útil, concreta y con personalidad, "
+        "en voseo. Seguí el pedido y la guía; el brief orienta pero no autoriza hechos nuevos. "
+        "Cumplí las reglas aplicables de la guía. Usá el pedido y la guía como respaldo: "
+        "no agregues características o condiciones no confirmadas. "
+        "Cumplí controles_formato. Los emojis son opcionales y el largo ideal es una sugerencia. "
+        "Un anuncio no necesita sumar descuentos ni beneficios. Un push sobre una categoría "
+        "no anuncia una línea nueva salvo que el pedido lo diga. En una corrección, "
+        "resolvé todos los ajustes juntos. Si el borrador inventó algo, quitalo o reemplazalo "
+        "por un marcador pendiente: no pidas datos para sostener una invención. "
+        "Entregá título y texto completos, incluidos los marcadores necesarios." + instrucciones_canal,
         entrada,
     )
+    if estado["pedido"].canal == "WhatsApp":
+        pieza = Pieza(titulo="", texto=pieza.cuerpo)
+        fuentes = brief["pedido"] + " " + json.dumps(brief["reglas_aplicables"], ensure_ascii=False)
+        conocidos = [m.group().rstrip(".,;!?\"'") for m in PATRON_ENLACE.finditer(fuentes)]
+        es_promocion = estado["pedido"].promocion != "ninguna"
+        dato = "enlace a bases" if es_promocion else "enlace"
+        enlace = conocidos[0] if conocidos else f"[PENDIENTE: {dato}]"
+        # El enlace es dato, no copy: se usa uno provisto, nunca uno generado por el LLM.
+        cuerpo = PATRON_ENLACE.sub("", pieza.texto)
+        cuerpo = re.sub(r"\[PENDIENTE:[^\]]*(?:link|enlace|url)[^\]]*\]", "", cuerpo, flags=re.IGNORECASE)
+        cuerpo = re.sub(r"\[(?:link|enlace|url)\]", "", cuerpo, flags=re.IGNORECASE)
+        cuerpo = re.sub(
+            r"\s*(?:Aprovech[aá] el link|M[aá]s info y compra|M[aá]s informaci[oó]n|"
+            r"Consult[aá] (?:las )?bases y condiciones|Bases(?: y condiciones)?|CTA)\s*:.*$",
+            "", cuerpo, flags=re.IGNORECASE | re.DOTALL)
+        etiqueta = "Bases y condiciones" if es_promocion else "Más información"
+        pieza = Pieza(titulo="", texto=f"{cuerpo.strip()}\n{etiqueta}: {enlace}")
     return {"pieza": pieza, "detalle": _detalle(estado, "Redactor", f"{pieza.titulo}\n{pieza.texto}")}
 
 
 def _revisor(estado):
     brief, pedido, pieza = estado["brief"], estado["pedido"], estado["pieza"]
     formato = validar_formato(pedido.canal, pieza.titulo, pieza.texto)
-    if pedido.canal == "Push":
-        patron = r"\b\d+\s+(?:horas?|días?|semanas?|mes(?:es)?|años?)\b"
-        plazos_pedido = set(re.findall(patron, estado["pregunta"].casefold()))
-        plazos_pieza = set(re.findall(patron, f"{pieza.titulo} {pieza.texto}".casefold()))
-        if plazos_pieza - plazos_pedido:
-            formato.append("Quitá las frecuencias o plazos numéricos que el pedido no respalda.")
-        if re.search(r"\babre la app\b", f"{pieza.titulo} {pieza.texto}", re.IGNORECASE):
-            formato.append("Quitá «Abre la app». La apertura es una acción del push.")
     editorial = _consultar(
-        RevisionEditorial,
+        Revision,
         POLITICA_FUENTES +
-        "Revisá la pieza con la guía, el pedido original y el antecedente editorial. "
-        "Completá TODAS las categorías del esquema en una sola revisión. No te detengas "
-        "en el primer error. Evaluá ortografía y tildes, gramática, tono, repetición, "
-        "respaldo y contenido, incluso si Python ya detectó errores de formato o faltan datos. "
-        "En cada lista incluí todos los ajustes de esa categoría; usá [] si no hay. "
-        "Cada entrada debe describir un error vigente y un ajuste concreto. No incluyas "
-        "razonamiento, comprobaciones correctas ni frases como ‘no hay errores’. "
-        "No repitas el mismo problema en dos categorías. "
-        "En ortografia y tono citá el fragmento literal y su reemplazo corregido, "
-        "sin explicaciones. Si el fragmento ya está bien, no lo incluyas. "
-        "Los conteos de caracteres, palabras, hashtags y emojis ya los resuelve Python: "
-        "no los vuelvas a medir ni los agregues a tus categorías. No hay mínimo de emojis: "
-        "cero es válido en todos los canales. No conviertas recomendaciones en requisitos. "
-        "La guía pide voseo. ‘Elegí’, ‘abrí’ y ‘mirá’ son correctos. "
-        "‘Descubrí’ y ‘tenés’ también son voseo correcto. No los reportes como tuteo. "
-        "‘Elegi’ sin tilde es un error de ortografía, no de tuteo: señalalo en ortografia "
-        "desde la primera revisión, sin repetirlo en tono. "
-        "Pedí corregir el tuteo (‘elige’, ‘abre’, ‘mira’). Evaluá el respaldo contra "
-        "el pedido y las reglas explícitas de la guía, respetando su prioridad. "
-        "No inventes datos en la observación. Si la guía exige un beneficio de recuperación "
-        "y el pedido no indica cuál está autorizado, preguntá cuál es en datos_faltantes. "
-        "El historial sirve para evitar repetición. Sus promociones no autorizan ofertas nuevas. "
-        "Un ejemplo de la guía no es un antecedente del historial. Si no hay antecedentes, "
-        "devolvé repeticion=[]. "
-        "Si se puede quitar una afirmación inventada conservando el pedido, pedí corregir. "
-        "Si falta un dato indispensable, como vigencia o enlace de bases para un descuento "
-        "solicitado, preguntá por él en datos_faltantes. No reescribas la pieza.",
-        {"pedido": brief["pedido"], "reglas": brief["reglas_aplicables"],
-         "antecedente": brief["historial"][:1], "pieza": pieza.model_dump(),
+        "Sos el revisor de Hornero. Señalá en una devolución conjunta solo incumplimientos "
+        "de la guía, del pedido o datos inventados. Para cada ajuste explicá la regla aplicable. "
+        "Comprobá que cada característica de producto, condición de compra o promoción "
+        "tenga respaldo en el pedido o la guía. Las preferencias del segmento y los "
+        "antecedentes no prueban que una oferta esté vigente. Si no hay respaldo, corregí. "
+        "Tu observación debe ser breve: máximo tres puntos, sin repetir ideas y sin reescribir la pieza. "
+        "Citá solo problemas presentes en el texto; no afirmes que falta algo que está presente. "
+        "Python ya cuenta largos, hashtags y emojis; no recalcules esas cifras. No conviertas ideales ni preferencias "
+        "en obligaciones. ‘Elegí’, ‘abrí’, ‘descubrí’ y ‘tenés’ son voseo correcto. "
+        "Usar una frase de la guía, un saludo o la misma temática no es repetir una campaña. "
+        "El historial ayuda a variar el mensaje, especialmente si el pedido lo exige; "
+        "no prohíbe fórmulas de empatía recomendadas por la guía. "
+        "Los legales de revisión son condicionales: se aplican si el texto ofrece esa "
+        "promoción, no obligan a ofrecerla. Si se agregó una promoción ajena al pedido, "
+        "pedí quitarla en vez de agregar sus condiciones. "
+        "Si el redactor inventó un cupón, una promoción, un contacto o una característica, "
+        "usá corregir: pedí quitarlo o usar un marcador. No uses pedir_datos para confirmar "
+        "una invención del borrador. Usá pedir_datos solo para completar datos requeridos "
+        "por la guía y el pedido; indicá exactamente qué falta y la sección que lo exige. "
+        "Un marcador pendiente es válido en un borrador, pero la pieza aún no está lista "
+        "para aprobar y guardar. Aprobá si cumple; no busques objeciones para llenar categorías.",
+        {"pedido": brief["pedido"], "datos_del_pedido": pedido.model_dump(include={"canal", "segmento", "promocion"}),
+         "reglas": brief["reglas_aplicables"],
+         "legales_revision": brief.get("legales_revision", []),
+        "antecedentes": brief["historial"], "estrategia": brief.get("estrategia", {}),
+         "pieza": pieza.model_dump(),
          "errores_formato": formato},
     )
-    lenguaje = {"Ortografía": [], "Tono": []}
-    cambios = set()
-    texto_actual = f"{pieza.titulo}\n\n{pieza.texto}"
-    for categoria, ajustes in (("Ortografía", editorial.ortografia), ("Tono", editorial.tono)):
-        for ajuste in ajustes:
-            cambio = (ajuste.fragmento, ajuste.reemplazo)
-            if ajuste.fragmento == ajuste.reemplazo or cambio in cambios:
-                continue
-            cambios.add(cambio)
-            if ajuste.fragmento not in texto_actual:
-                lenguaje[categoria].append(
-                    f"La corrección cita «{ajuste.fragmento}», que no aparece en la pieza; requiere revisión.")
-            else:
-                lenguaje[categoria].append(f"Reemplazá «{ajuste.fragmento}» por «{ajuste.reemplazo}».")
-    categorias = {"Formato": formato, **lenguaje,
-                  "Respaldo": editorial.respaldo, "Repetición": editorial.repeticion,
-                  "Contenido": editorial.contenido, "Datos faltantes": editorial.datos_faltantes}
-    observaciones = [f"- {categoria}: {error}" for categoria, errores in categorias.items()
-                     for error in dict.fromkeys(errores)]
-    veredicto = "pedir_datos" if editorial.datos_faltantes else "corregir" if observaciones else "aprobar"
+    pendientes = re.findall(r"\[PENDIENTE:\s*([^\]\n]+)\]", f"{pieza.titulo}\n{pieza.texto}", re.IGNORECASE)
+    observaciones = [f"- Formato: {error}" for error in formato]
+    if editorial.veredicto != "aprobar" and editorial.observacion.strip():
+        observaciones.append(editorial.observacion)
+    if pendientes:
+        observaciones.append("Para finalizar: " + "; ".join(dict.fromkeys(pendientes)) + ".")
+    veredicto = editorial.veredicto
+    if pendientes and veredicto == "aprobar":
+        veredicto = "pedir_datos"
+    if formato and veredicto == "aprobar":
+        veredicto = "corregir"
     revision = Revision(veredicto=veredicto,
                         observacion="\n".join(observaciones) or "Sin observaciones de formato ni editoriales.")
     return {"revision": revision,
@@ -290,9 +301,9 @@ def _revisor(estado):
 
 def _terminar(estado):
     revision, pieza, pedido = estado["revision"], estado["pieza"], estado["pedido"]
+    respuesta = f"**{pieza.titulo}**\n\n{pieza.texto}" if pieza.titulo.strip() else pieza.texto
     if revision.veredicto != "aprobar":
-        return {"respuesta": f"Pieza pendiente. {revision.observacion}"}
-    respuesta = f"**{pieza.titulo}**\n\n{pieza.texto}"
+        return {"respuesta": f"**Borrador para revisar o completar**\n\n{respuesta}\n\n{revision.observacion}"}
     if pedido.guardar:
         resultado = guardar_pieza.invoke({"canal": pedido.canal, "segmento": pedido.segmento or "Todos",
                                          **pieza.model_dump()})
@@ -316,7 +327,7 @@ def _grafo():
     grafo.add_edge("_redactor", "_revisor")
     grafo.add_conditional_edges(
         "_revisor",
-        lambda e: "_contar_correccion" if e["revision"].veredicto == "corregir" and not e["correcciones"]
+        lambda e: "_contar_correccion" if e["revision"].veredicto != "aprobar" and not e["correcciones"]
         else "_terminar",
         ["_contar_correccion", "_terminar"],
     )

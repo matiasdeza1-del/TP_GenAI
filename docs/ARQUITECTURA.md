@@ -4,6 +4,10 @@
 
 La Etapa 1 tiene una separación razonable para el tamaño del TP: `main.py` presenta, `agentes.py` coordina, `tools.py` accede a guía/historial, `rag_guia.py` gestiona recuperación y `validaciones.py` comprueba formatos de canal sin LLM. Mantener carpetas por etapa coincide con el entregable. No hay necesidad actual de microservicios ni de una migración completa a `src/`.
 
+El revisor devuelve un veredicto y una observación conjunta contra guía y pedido. Python suma los incumplimientos objetivos de formato. Siempre se muestra la pieza: si hay datos sin definir, se entrega como borrador con marcadores y aclaraciones. La ronda de corrección acotada limita llamadas, no oculta el trabajo producido. Solo las piezas completas y aprobadas que el usuario pidió guardar se agregan al historial.
+
+Los roles usan `create_agent` con `ProviderStrategy`: Groq entrega el JSON de cada esquema de forma nativa, sin simular una herramienta para devolverlo. El modelo predeterminado es `openai/gpt-oss-20b`, configurable mediante `HORNERO_MODELO`. Este control es del formato de intercambio, no una restricción editorial. Referencias: [Structured Outputs de Groq](https://console.groq.com/docs/structured-outputs) y [ProviderStrategy de LangChain](https://docs.langchain.com/oss/python/langchain/structured-output).
+
 El repositorio estaba preparado como prototipo individual: no tenía README, gitignore, guía de contribución, instrucciones para IA, tests versionados ni versiones resueltas de dependencias. La bitácora de Marketing conserva buena evidencia, pero mezcla decisiones históricas y pendientes que luego se resolvieron. Esto dificulta identificar el estado vigente.
 
 Riesgos concretos:

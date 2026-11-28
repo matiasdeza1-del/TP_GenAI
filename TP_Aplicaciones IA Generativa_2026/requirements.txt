@@ -8,7 +8,7 @@ regex  # Conteo Unicode de secuencias emoji, compatible con Windows y macOS
 
 # LLM y agentes
 groq
-langchain
+langchain>=1.2
 langchain-groq
 langgraph
 
