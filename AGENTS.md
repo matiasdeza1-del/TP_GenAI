@@ -17,6 +17,7 @@
 - Separar interfaz, coordinación, herramientas y acceso a datos. Crear módulos nuevos cuando haya una responsabilidad concreta, sin armar frameworks anticipadamente.
 - Los datos de referencia viven en `datos/`. Las pruebas de escritura usan copias temporales del CSV.
 - En Marketing prima la guía de marca para reglas y beneficios explícitos del segmento. Premium puede comunicar acceso anticipado sin reconfirmarlo por campaña. El pedido aporta detalles particulares; ejemplos, historial y textos de legales no autorizan promociones nuevas. No agregar restricciones que contradigan esa política en un prompt de un rol aislado.
+- Diferenciar datos concretos verificables de expresiones publicitarias generales: no inventar precios, plazos, códigos, condiciones, garantías ni especificaciones, pero no bloquear lenguaje general de estilo, comodidad o durabilidad solo por falta de una ficha técnica. Respetar las prohibiciones de la guía.
 - Los bloqueos editoriales deben corresponder a requisitos de la guía o de la consigna. Una recomendación no es una prohibición. Si faltan datos, entregar la pieza completa como borrador con marcadores `[PENDIENTE: dato]`; no sustituirla por una negativa ni pedir datos para sostener una oferta inventada por el redactor. Los borradores incompletos no van al CSV de aprobados.
 
 ## Implementación y verificación
